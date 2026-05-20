@@ -1,0 +1,9 @@
+{
+  "functions": {
+    "api/log.js":  { "maxDuration": 10 },
+    "api/logs.js": { "maxDuration": 10 }
+  },
+  "rewrites": [
+    { "source": "/", "destination": "/public/index.html" }
+  ]
+}
