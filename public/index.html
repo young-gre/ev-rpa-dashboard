@@ -1,0 +1,276 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>EV RPA 실행 로그</title>
+  <style>
+    * { box-sizing: border-box; margin: 0; padding: 0; }
+    body { font-family: 'Segoe UI', sans-serif; background: #f0f2f5; color: #222; }
+
+    header {
+      background: #1F4E79;
+      color: #fff;
+      padding: 18px 32px;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+    }
+    header h1 { font-size: 20px; font-weight: 600; }
+    header span { font-size: 13px; opacity: 0.8; }
+
+    .container { max-width: 1200px; margin: 24px auto; padding: 0 20px; }
+
+    .stats {
+      display: grid;
+      grid-template-columns: repeat(4, 1fr);
+      gap: 16px;
+      margin-bottom: 24px;
+    }
+    .stat-card {
+      background: #fff;
+      border-radius: 10px;
+      padding: 20px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+    }
+    .stat-card .label { font-size: 12px; color: #888; margin-bottom: 8px; }
+    .stat-card .value { font-size: 28px; font-weight: 700; color: #1F4E79; }
+    .stat-card.warn .value { color: #e53935; }
+
+    .toolbar {
+      display: flex;
+      gap: 12px;
+      margin-bottom: 16px;
+      align-items: center;
+    }
+    .toolbar select, .toolbar input {
+      padding: 8px 12px;
+      border: 1px solid #ddd;
+      border-radius: 6px;
+      font-size: 13px;
+      background: #fff;
+    }
+    .btn-refresh {
+      padding: 8px 18px;
+      background: #1F4E79;
+      color: #fff;
+      border: none;
+      border-radius: 6px;
+      font-size: 13px;
+      cursor: pointer;
+    }
+    .btn-refresh:hover { background: #163a5f; }
+
+    .table-wrap {
+      background: #fff;
+      border-radius: 10px;
+      box-shadow: 0 1px 4px rgba(0,0,0,0.08);
+      overflow: hidden;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 13px; }
+    thead th {
+      background: #1F4E79;
+      color: #fff;
+      padding: 12px 14px;
+      text-align: left;
+      font-weight: 500;
+    }
+    tbody tr:nth-child(even) { background: #f8f9fc; }
+    tbody tr:hover { background: #eef2f8; }
+    tbody td { padding: 11px 14px; border-bottom: 1px solid #f0f0f0; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 99px;
+      font-size: 11px;
+      font-weight: 600;
+    }
+    .badge.START      { background: #e3f2fd; color: #1565c0; }
+    .badge.ROW_DONE   { background: #e8f5e9; color: #2e7d32; }
+    .badge.FINISH     { background: #f3e5f5; color: #6a1b9a; }
+    .badge.EXPIRED    { background: #ffebee; color: #c62828; }
+    .badge.INVALID_REGION { background: #fff3e0; color: #e65100; }
+
+    .empty {
+      text-align: center;
+      padding: 60px;
+      color: #aaa;
+      font-size: 15px;
+    }
+
+    .loading {
+      text-align: center;
+      padding: 60px;
+      color: #888;
+    }
+
+    .refresh-time {
+      font-size: 12px;
+      color: #aaa;
+      margin-left: auto;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>⚡ EV RPA 실행 로그 대시보드</h1>
+  <span id="last-refresh">-</span>
+</header>
+
+<div class="container">
+
+  <div class="stats">
+    <div class="stat-card">
+      <div class="label">총 실행 시작</div>
+      <div class="value" id="cnt-start">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">총 처리 건수</div>
+      <div class="value" id="cnt-done">-</div>
+    </div>
+    <div class="stat-card">
+      <div class="label">완료 세션</div>
+      <div class="value" id="cnt-finish">-</div>
+    </div>
+    <div class="stat-card warn">
+      <div class="label">⚠️ 비정상 접근</div>
+      <div class="value" id="cnt-warn">-</div>
+    </div>
+  </div>
+
+  <div class="toolbar">
+    <select id="filter-event">
+      <option value="">전체 이벤트</option>
+      <option value="START">START</option>
+      <option value="ROW_DONE">ROW_DONE</option>
+      <option value="FINISH">FINISH</option>
+      <option value="EXPIRED">EXPIRED</option>
+      <option value="INVALID_REGION">INVALID_REGION</option>
+    </select>
+    <select id="filter-cartype">
+      <option value="">전체 차종</option>
+      <option value="승용">승용</option>
+      <option value="화물">화물</option>
+    </select>
+    <input type="text" id="filter-host" placeholder="호스트명 검색...">
+    <button class="btn-refresh" onclick="loadLogs()">🔄 새로고침</button>
+    <span class="refresh-time" id="refresh-time"></span>
+  </div>
+
+  <div class="table-wrap">
+    <div class="loading" id="loading">로딩 중...</div>
+    <table id="log-table" style="display:none">
+      <thead>
+        <tr>
+          <th>시간</th>
+          <th>이벤트</th>
+          <th>차종</th>
+          <th>호스트명</th>
+          <th>PC ID</th>
+          <th>버전</th>
+          <th>행번호</th>
+          <th>상세</th>
+        </tr>
+      </thead>
+      <tbody id="log-body"></tbody>
+    </table>
+    <div class="empty" id="empty" style="display:none">로그가 없습니다.</div>
+  </div>
+
+</div>
+
+<script>
+  let allLogs = [];
+
+  function formatTime(iso) {
+    if (!iso) return '-';
+    const d = new Date(iso);
+    const pad = n => String(n).padStart(2, '0');
+    return `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}:${pad(d.getSeconds())}`;
+  }
+
+  function renderLogs(logs) {
+    const tbody = document.getElementById('log-body');
+    const table = document.getElementById('log-table');
+    const empty = document.getElementById('empty');
+    const loading = document.getElementById('loading');
+
+    loading.style.display = 'none';
+
+    if (!logs || logs.length === 0) {
+      table.style.display = 'none';
+      empty.style.display = 'block';
+      return;
+    }
+
+    table.style.display = 'table';
+    empty.style.display = 'none';
+
+    tbody.innerHTML = logs.map(log => `
+      <tr>
+        <td>${formatTime(log.timestamp)}</td>
+        <td><span class="badge ${log.event}">${log.event || '-'}</span></td>
+        <td>${log.car_type || '-'}</td>
+        <td>${log.hostname || '-'}</td>
+        <td style="font-family:monospace;font-size:11px">${log.machine_id || '-'}</td>
+        <td>${log.version || '-'}</td>
+        <td>${log.row_no || '-'}</td>
+        <td style="max-width:300px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap" title="${log.detail || ''}">${log.detail || '-'}</td>
+      </tr>
+    `).join('');
+  }
+
+  function applyFilters() {
+    const event   = document.getElementById('filter-event').value;
+    const cartype = document.getElementById('filter-cartype').value;
+    const host    = document.getElementById('filter-host').value.toLowerCase();
+
+    const filtered = allLogs.filter(log => {
+      if (event   && log.event    !== event)                    return false;
+      if (cartype && log.car_type !== cartype)                  return false;
+      if (host    && !(log.hostname||'').toLowerCase().includes(host)) return false;
+      return true;
+    });
+
+    renderLogs(filtered);
+  }
+
+  function updateStats(logs) {
+    document.getElementById('cnt-start').textContent  = logs.filter(l => l.event === 'START').length;
+    document.getElementById('cnt-done').textContent   = logs.filter(l => l.event === 'ROW_DONE').length;
+    document.getElementById('cnt-finish').textContent = logs.filter(l => l.event === 'FINISH').length;
+    document.getElementById('cnt-warn').textContent   = logs.filter(l => ['EXPIRED','INVALID_REGION'].includes(l.event)).length;
+  }
+
+  async function loadLogs() {
+    document.getElementById('loading').style.display = 'block';
+    document.getElementById('log-table').style.display = 'none';
+    document.getElementById('empty').style.display = 'none';
+
+    try {
+      const res  = await fetch('/api/logs');
+      const data = await res.json();
+      allLogs = data.logs || [];
+      updateStats(allLogs);
+      applyFilters();
+
+      const now = new Date();
+      document.getElementById('last-refresh').textContent = `마지막 갱신: ${now.toLocaleTimeString('ko-KR')}`;
+      document.getElementById('refresh-time').textContent = `총 ${allLogs.length}건`;
+    } catch (e) {
+      document.getElementById('loading').textContent = '로그를 불러오는 데 실패했습니다.';
+    }
+  }
+
+  document.getElementById('filter-event').addEventListener('change', applyFilters);
+  document.getElementById('filter-cartype').addEventListener('change', applyFilters);
+  document.getElementById('filter-host').addEventListener('input', applyFilters);
+
+  // 최초 로드 + 60초마다 자동 갱신
+  loadLogs();
+  setInterval(loadLogs, 60000);
+</script>
+</body>
+</html>
